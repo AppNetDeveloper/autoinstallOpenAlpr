@@ -1,0 +1,229 @@
+# Script de instalación y configuración para Windows
+# Este script instala y configura herramientas de desarrollo, Tesseract, OpenCV y la última versión de OpenALPR.
+
+# ========================================
+# Funciones de Utilidad
+# ========================================
+function Write-Info {
+    Write-Host "[INFO] $($args[0])" -ForegroundColor Green
+}
+
+function Write-WarningMsg {
+    Write-Host "[WARNING] $($args[0])" -ForegroundColor Yellow
+}
+
+function Write-ErrorMsg {
+    Write-Host "[ERROR] $($args[0])" -ForegroundColor Red
+    exit 1
+}
+
+# ========================================
+# Verificar si se está ejecutando como Administrador
+# ========================================
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-ErrorMsg "Este script debe ejecutarse como administrador."
+}
+
+# ========================================
+# Instalar Chocolatey si no está instalado
+# ========================================
+if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+    Write-Info "Instalando Chocolatey..."
+    Set-ExecutionPolicy Bypass -Scope Process -Force
+    try {
+        Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+        Write-Info "Chocolatey instalado correctamente."
+    } catch {
+        Write-ErrorMsg "Error al instalar Chocolatey."
+    }
+} else {
+    Write-Info "Chocolatey ya está instalado."
+}
+
+# ========================================
+# Actualizar Chocolatey
+# ========================================
+Write-Info "Actualizando Chocolatey..."
+try {
+    choco upgrade chocolatey -y
+    Write-Info "Chocolatey actualizado correctamente."
+} catch {
+    Write-WarningMsg "Error al actualizar Chocolatey. Continuando..."
+}
+
+# ========================================
+# Lista de Paquetes a Instalar
+# ========================================
+$packages = @(
+    'git',
+    'python',
+    'python3-pip',
+    'visualstudio2019buildtools',
+    'cmake',
+    'make',
+    'wget',
+    '7zip',
+    'openjdk17',
+    'tesseract',
+    'opencv',
+    'docker-desktop'
+    # Agrega otros paquetes necesarios aquí
+)
+
+foreach ($package in $packages) {
+    Write-Info "Instalando $package..."
+    try {
+        choco install $package -y --ignore-checksums
+        Write-Info "$package instalado correctamente."
+    } catch {
+        Write-WarningMsg "$package no se pudo instalar. Continuando..."
+    }
+}
+
+# ========================================
+# Agregar Tesseract al PATH
+# ========================================
+$tesseractPath = "C:\Program Files\Tesseract-OCR"
+if (-not ($env:Path -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ -eq $tesseractPath })) {
+    Write-Info "Agregando Tesseract al PATH..."
+    [Environment]::SetEnvironmentVariable("Path", $env:Path + ";$tesseractPath", [System.EnvironmentVariableTarget]::Machine)
+    $env:Path += ";$tesseractPath"
+    Write-Info "Tesseract agregado al PATH."
+} else {
+    Write-Info "Tesseract ya está en el PATH."
+}
+
+# ========================================
+# Agregar OpenCV al PATH
+# ========================================
+# Para Chocolatey, OpenCV generalmente se instala en 'C:\tools\opencv' o similar.
+$opencvInstalledPath = Get-ChildItem "C:\tools" -Directory | Where-Object { $_.Name -like "opencv*" } | Select-Object -First 1
+
+if ($opencvInstalledPath) {
+    $opencvBinPath = Join-Path $opencvInstalledPath.FullName "build\x64\vc15\bin"
+    if (Test-Path $opencvBinPath) {
+        if (-not ($env:Path -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ -eq $opencvBinPath })) {
+            Write-Info "Agregando OpenCV al PATH..."
+            [Environment]::SetEnvironmentVariable("Path", $env:Path + ";$opencvBinPath", [System.EnvironmentVariableTarget]::Machine)
+            $env:Path += ";$opencvBinPath"
+            Write-Info "OpenCV agregado al PATH."
+        } else {
+            Write-Info "OpenCV ya está en el PATH."
+        }
+    } else {
+        Write-WarningMsg "Ruta de OpenCV bin no encontrada: $opencvBinPath"
+    }
+} else {
+    Write-WarningMsg "OpenCV no parece estar instalado en el sistema."
+}
+
+# ========================================
+# Descargar Datos de Idioma para Tesseract
+# ========================================
+$tessdata_dir = "C:\Program Files\Tesseract-OCR\tessdata"
+if (-not (Test-Path $tessdata_dir)) {
+    Write-Info "Creando directorio tessdata..."
+    New-Item -ItemType Directory -Path $tessdata_dir -Force | Out-Null
+}
+
+$spa_traineddata_url = "https://github.com/tesseract-ocr/tessdata/raw/main/spa.traineddata"
+$spa_traineddata_path = Join-Path $tessdata_dir "spa.traineddata"
+
+if (-not (Test-Path $spa_traineddata_path)) {
+    Write-Info "Descargando spa.traineddata..."
+    try {
+        Invoke-WebRequest -Uri $spa_traineddata_url -OutFile $spa_traineddata_path
+        Write-Info "spa.traineddata descargado correctamente."
+    } catch {
+        Write-WarningMsg "No se pudo descargar spa.traineddata."
+    }
+} else {
+    Write-Info "spa.traineddata ya está presente."
+}
+
+# ========================================
+# Iniciar Docker Desktop
+# ========================================
+Write-Info "Iniciando Docker Desktop..."
+try {
+    $dockerDesktopPath = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+    if (Test-Path $dockerDesktopPath) {
+        Start-Process $dockerDesktopPath
+        Write-Info "Docker Desktop iniciado. Esperando a que Docker esté listo..."
+
+        # Esperar a que Docker esté listo (máximo 5 minutos)
+        $dockerReady = $false
+        $maxRetries = 60
+        $retryInterval = 5 # segundos
+        for ($i = 1; $i -le $maxRetries; $i++) {
+            try {
+                docker --version | Out-Null
+                $dockerReady = $true
+                Write-Info "Docker está listo."
+                break
+            } catch {
+                Write-Info "Esperando a que Docker se inicie... ($i/$maxRetries)"
+                Start-Sleep -Seconds $retryInterval
+            }
+        }
+
+        if (-not $dockerReady) {
+            Write-WarningMsg "Docker no se inició correctamente después de esperar."
+        }
+    } else {
+        Write-WarningMsg "No se encontró Docker Desktop en la ruta esperada: $dockerDesktopPath"
+    }
+} catch {
+    Write-WarningMsg "Error al iniciar Docker Desktop."
+}
+
+# ========================================
+# Verificar Disponibilidad de Docker
+# ========================================
+if (Get-Command docker -ErrorAction SilentlyContinue) {
+    Write-Info "Docker está disponible."
+} else {
+    Write-WarningMsg "Docker no está disponible. Asegúrate de que Docker Desktop esté ejecutándose y reinicia PowerShell si es necesario."
+}
+
+# ========================================
+# Instalar OpenALPR mediante Docker
+# ========================================
+Write-Info "Instalando OpenALPR mediante Docker..."
+try {
+    docker pull openalpr/openalpr
+    Write-Info "Imagen de OpenALPR descargada correctamente."
+} catch {
+    Write-WarningMsg "No se pudo descargar la imagen de OpenALPR. Asegúrate de que Docker esté funcionando correctamente."
+}
+
+# ========================================
+# Confirmar Versiones Instaladas
+# ========================================
+Write-Info "Confirmando versiones instaladas..."
+
+# Confirmar Tesseract
+try {
+    $tesseractVersion = tesseract --version | Select-Object -First 1
+    Write-Host "Tesseract: $tesseractVersion" -ForegroundColor Green
+} catch {
+    Write-WarningMsg "Tesseract no está instalado o no está en el PATH."
+}
+
+# Confirmar OpenCV (usando Python)
+try {
+    $opencvVersion = python -c "import cv2; print(cv2.__version__)"
+    Write-Host "OpenCV: $opencvVersion" -ForegroundColor Green
+} catch {
+    Write-WarningMsg "OpenCV no está instalado o no está accesible desde Python."
+}
+
+# Confirmar OpenALPR
+try {
+    $alprVersion = docker run --rm openalpr/openalpr alpr --version
+    Write-Host "OpenALPR: $alprVersion" -ForegroundColor Green
+} catch {
+    Write-WarningMsg "OpenALPR no está instalado correctamente o Docker no está funcionando."
+}
+
+Write-Info "¡Instalación y configuración completadas con éxito!"
