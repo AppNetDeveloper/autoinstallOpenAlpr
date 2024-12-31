@@ -60,9 +60,9 @@ LIBJASPER_BUILD_DIR="$SRC_DIR/jasper_build"
 mkdir -p "$LIBJASPER_BUILD_DIR"
 
 cmake -S "$LIBJASPER_DIR" -B "$LIBJASPER_BUILD_DIR" \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_INSTALL_PREFIX=/usr/local \
-      -DJAS_ENABLE_DOC=OFF
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr/local \
+    -DJAS_ENABLE_DOC=OFF
 
 cmake --build "$LIBJASPER_BUILD_DIR" -- -j"$(nproc)"
 cmake --install "$LIBJASPER_BUILD_DIR"
@@ -84,7 +84,7 @@ cd "$LEPTONICA_DIR"
 
 ./autogen.sh
 ./configure --prefix=/usr/local --disable-shared \
-            --with-zlib --with-jpeg --with-libwebp --with-libtiff --with-libpng --with-jasper
+           --with-zlib --with-jpeg --with-libwebp --with-libtiff --with-libpng --with-jasper
 make -j"$(nproc)"
 sudo make install
 sudo ldconfig
@@ -137,9 +137,9 @@ git clone https://github.com/opencv/opencv_contrib.git "$OPENCV_CONTRIB_DIR"
 mkdir -p "$OPENCV_BUILD_DIR"
 
 cmake -S "$OPENCV_DIR" -B "$OPENCV_BUILD_DIR" \
-      -D CMAKE_BUILD_TYPE=Release \
-      -D CMAKE_INSTALL_PREFIX=/usr/local \
-      -D OPENCV_EXTRA_MODULES_PATH="$OPENCV_CONTRIB_DIR/modules"
+    -D CMAKE_BUILD_TYPE=Release \
+    -D CMAKE_INSTALL_PREFIX=/usr/local \
+    -D OPENCV_EXTRA_MODULES_PATH="$OPENCV_CONTRIB_DIR/modules"
 
 cmake --build "$OPENCV_BUILD_DIR" -- -j"$(nproc)"
 sudo cmake --install "$OPENCV_BUILD_DIR"
@@ -158,12 +158,30 @@ fi
 git clone https://github.com/openalpr/openalpr.git "$OPENALPR_DIR"
 mkdir -p "$OPENALPR_DIR/src/build"
 
+echo_info "Intentando compilar OpenALPR con rutas iniciales..."
 cmake -S "$OPENALPR_DIR/src" -B "$OPENALPR_DIR/src/build" \
+    -DCMAKE_CXX_FLAGS="-std=c++11" \
+    -DCMAKE_INSTALL_PREFIX=/usr/local \
+    -DCMAKE_INSTALL_SYSCONFDIR=/etc \
+    -DTesseract_INCLUDE_DIRS="/usr/local/include/tesseract" \
+    -DTesseract_LIBRARIES="/usr/local/lib/libtesseract.so"
+
+if [ $? -ne 0 ]; then
+  echo_warning "La compilación con rutas iniciales falló. Intentando con rutas específicas..."
+  rm -rf "$OPENALPR_DIR/src/build"  # Limpiar el intento fallido
+  mkdir -p "$OPENALPR_DIR/src/build" # Recrear el directorio build
+
+  cmake -S "$OPENALPR_DIR/src" -B "$OPENALPR_DIR/src/build" \
       -DCMAKE_CXX_FLAGS="-std=c++11" \
       -DCMAKE_INSTALL_PREFIX=/usr/local \
       -DCMAKE_INSTALL_SYSCONFDIR=/etc \
-      -DTesseract_INCLUDE_DIRS="/usr/local/include/tesseract" \
-      -DTesseract_LIBRARIES="/usr/local/lib/libtesseract.so"
+      -DTesseract_INCLUDE_DIRS="/usr/local/include/tesseract:/usr/local/include" \
+      -DTesseract_LIBRARIES="/usr/local/lib/libtesseract.so;/usr/local/lib/liblept.so"
+
+  if [ $? -ne 0 ]; then
+    echo_error "La compilación falló incluso con rutas específicas. Revisa los logs de CMake."
+  fi
+fi
 
 cmake --build "$OPENALPR_DIR/src/build" -- -j"$(nproc)"
 sudo cmake --install "$OPENALPR_DIR/src/build"
@@ -174,6 +192,8 @@ echo_info "Confirmando versiones instaladas..."
 echo -n "Tesseract: " && tesseract --version | head -n1
 echo -n "OpenCV: " && pkg-config --modversion opencv4 || echo "No encontrado"
 echo -n "OpenALPR: " && alpr --version || echo "No encontrado"
+
+echo_info "¡Instalación y configuración completadas con éxito!"
 
 echo_info "¡Instalación y configuración completadas con éxito!"
 
