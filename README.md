@@ -13,3 +13,7 @@ chmod 777 install.sh
 
 wget http://plates.openalpr.com/h786poj.jpg -O lp.jpg
 alpr lp.jpg
+
+
+
+NOW windows version install
